@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lightshot Roulette</title>
+    <style>
+        body {
+            background-color: #121212;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
+
+        #display-image {
+            max-width: 90vw;
+            max-height: 75vh;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+            border-radius: 6px;
+            display: none;
+            object-fit: contain;
+            transition: opacity 0.3s ease;
+        }
+
+        #refresh-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 15px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        #refresh-btn:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        #refresh-btn:active {
+            transform: scale(0.95);
+        }
+
+        #refresh-btn svg {
+            width: 32px;
+            height: 32px;
+            fill: #777777;
+            transition: fill 0.3s ease;
+        }
+
+        #refresh-btn:hover svg {
+            fill: #ffffff;
+        }
+
+        .loading svg {
+            animation: spin 1s linear infinite;
+            fill: #ffffff !important;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <img id="display-image" src="" alt="">
+        <button id="refresh-btn" aria-label="Neste bilde">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M12 2.75a9.25 9.25 0 1 0 4.737 17.197l-1.393-2.393A6.75 6.75 0 1 1 18.75 12h-2.5l3.875-4.625L24 12h-2.75a9.25 9.25 0 0 0-9.25-9.25z"/>
+            </svg>
+        </button>
+    </div>
+
+    <script>
+        const imgElement = document.getElementById('display-image');
+        const btnElement = document.getElementById('refresh-btn');
+
+        // Oppdatert ID-generator: 2 bokstaver + 4 tall gir massivt bedre treffprosent
+        function generateRandomId() {
+            const letters = 'abcdefghijklmnopqrstuvwxyz';
+            const numbers = '0123456789';
+            let result = '';
+            
+            // 2 tilfeldige bokstaver
+            for (let i = 0; i < 2; i++) {
+                result += letters.charAt(Math.floor(Math.random() * letters.length));
+            }
+            // 4 tilfeldige tall
+            for (let i = 0; i < 4; i++) {
+                result += numbers.charAt(Math.floor(Math.random() * numbers.length));
+            }
+            return result;
+        }
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        // Proxy-tjenester pakket inn i asynkrone funksjoner
+        const fetchHtmlViaProxy = async (targetUrl) => {
+            // Proxy 1: AllOrigins JSON (omgår local file:// CORS-problemet)
+            try {
+                const url = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+                const res = await fetch(url, { cache: "no-store" });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.contents) return data.contents;
+                }
+            } catch (e) { /* Ignorerer og går til fallback */ }
+
+            // Proxy 2: Corsproxy.io
+            try {
+                const url = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+                const res = await fetch(url, { cache: "no-store" });
+                if (res.ok) return await res.text();
+            } catch (e) { /* Faller gjennom til feilhåndtering */ }
+
+            throw new Error("Begge proxyer feilet");
+        };
+
+        async function fetchRandomImage() {
+            let validImageFound = false;
+
+            while (!validImageFound) {
+                const id = generateRandomId();
+                const targetUrl = `https://prnt.sc/${id}?cb=${Date.now()}`; 
+
+                try {
+                    // Henter HTML via vår smarte proxy-funksjon
+                    const htmlText = await fetchHtmlViaProxy(targetUrl);
+                    
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlText, 'text/html');
+
+                    let imgUrl = null;
+                    const metaImage = doc.querySelector('meta[property="og:image"]');
+                    const imgTag = doc.getElementById('screenshot-image');
+
+                    if (metaImage && metaImage.content) {
+                        imgUrl = metaImage.content;
+                    } else if (imgTag && imgTag.src) {
+                        imgUrl = imgTag.src;
+                    }
+
+                    if (!imgUrl || imgUrl.includes('st.prntscr.com') || imgUrl.startsWith('//st.prntscr.com')) {
+                        throw new Error('Bilde er slettet eller mangler.');
+                    }
+
+                    await preloadImage(imgUrl);
+
+                    imgElement.src = imgUrl;
+                    imgElement.style.display = 'block';
+                    imgElement.style.opacity = '1';
+                    validImageFound = true; 
+
+                } catch (error) {
+                    // Ved feil, vent 1 sekund for å ikke overbelaste proxyene
+                    await sleep(1000);
+                }
+            }
+        }
+
+        function preloadImage(url) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+
+        btnElement.addEventListener('click', async () => {
+            btnElement.classList.add('loading');
+            imgElement.style.opacity = '0.4';
+            await fetchRandomImage();
+            btnElement.classList.remove('loading');
+        });
+
+        window.onload = async () => {
+            btnElement.classList.add('loading');
+            await fetchRandomImage();
+            btnElement.classList.remove('loading');
+        };
+    </script>
+</body>
+</html>
