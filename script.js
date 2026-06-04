@@ -1,20 +1,51 @@
 const imgElement = document.getElementById('display-image');
 const btnElement = document.getElementById('refresh-btn');
 const backBtn = document.getElementById('back-btn');
+const forwardBtn = document.getElementById('forward-btn');
 const copyBtn = document.getElementById('copy-btn');
+const scaleBtn = document.getElementById('scale-btn');
+
+// Stats elementer
 const counterElement = document.getElementById('counter');
+const statsBtn = document.getElementById('stats-btn');
+const statsPanel = document.getElementById('stats-panel');
+const statReq = document.getElementById('stat-req');
+const statDead = document.getElementById('stat-dead');
+const statRate = document.getElementById('stat-rate');
 
-// --- Minne-håndtering for UI ---
-let imageHistory = [];
-let historyIndex = -1;
-const MAX_HISTORY = 4; 
-
-// --- Teller og Duplikat-blokkering (Lagres i nettleseren) ---
 let totalImagesFound = parseInt(localStorage.getItem('imgurRouletteCounter')) || 0;
 counterElement.textContent = totalImagesFound;
-
-// Henter listen over alle IDer vi noensinne har sett for å forhindre duplicates
 let seenIds = new Set(JSON.parse(localStorage.getItem('imgurRouletteSeen')) || []);
+
+let reqCount = 0;
+let deadCount = 0;
+
+let imageHistory = [];
+let historyIndex = -1;
+const MAX_HISTORY = 10; // Husker de siste 10 bildene bakover
+let isScaled = false; 
+
+// --- STATS TOGGLE ---
+statsBtn.addEventListener('click', () => {
+    if (statsPanel.style.display === 'none' || statsPanel.style.display === '') {
+        statsPanel.style.display = 'flex';
+        statsBtn.classList.add('active');
+    } else {
+        statsPanel.style.display = 'none';
+        statsBtn.classList.remove('active');
+    }
+});
+
+function updateStats(isSuccess) {
+    reqCount++;
+    if (!isSuccess) deadCount++;
+    
+    statReq.textContent = reqCount;
+    statDead.textContent = deadCount;
+    
+    let rate = ((reqCount - deadCount) / reqCount) * 100;
+    statRate.textContent = rate.toFixed(2);
+}
 
 function generateImgurId() {
     const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -29,7 +60,6 @@ function checkImage(url) {
     return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
-            // Filtrerer ut standard Imgur "Removed" bilder og ødelagte opplastninger
             if (img.width === 161 && img.height === 81) {
                 resolve(false);
             } else if (img.width === 0 || img.height === 0) {
@@ -53,6 +83,12 @@ function updateDisplay(url) {
     } else {
         backBtn.classList.remove('disabled');
     }
+
+    if (historyIndex >= imageHistory.length - 1) {
+        forwardBtn.classList.add('disabled');
+    } else {
+        forwardBtn.classList.remove('disabled');
+    }
 }
 
 async function fetchRandomImage() {
@@ -61,29 +97,25 @@ async function fetchRandomImage() {
     while (!validImageFound) {
         const id = generateImgurId();
         
-        // Hvis vi har sett denne spesifikke kombinasjonen før i livet, hopp over umiddelbart
-        if (seenIds.has(id)) {
-            continue;
-        }
+        if (seenIds.has(id)) continue;
 
         const targetUrl = `https://i.imgur.com/${id}.jpg`;
         const isValid = await checkImage(targetUrl);
 
+        updateStats(isValid);
+
         if (isValid) {
-            // --- Unngå duplikater og spar minne ---
             seenIds.add(id);
-            // Kapper listen hvis den blir for stor (sparer localStorage for å kræsje om 5 år)
             if (seenIds.size > 5000) {
                 seenIds = new Set(Array.from(seenIds).slice(-2500));
             }
             localStorage.setItem('imgurRouletteSeen', JSON.stringify([...seenIds]));
 
-            // --- Oppdater telleren ---
             totalImagesFound++;
             counterElement.textContent = totalImagesFound;
             localStorage.setItem('imgurRouletteCounter', totalImagesFound);
 
-            // --- Håndter historikk (Angre-knappen) ---
+            // Kutter fremtiden ved ny re-roll i fortiden (klassisk nettleser-historikk)
             imageHistory = imageHistory.slice(0, historyIndex + 1);
             imageHistory.push(targetUrl);
             if (imageHistory.length > MAX_HISTORY) {
@@ -97,7 +129,7 @@ async function fetchRandomImage() {
     }
 }
 
-// --- KNAPPELOGIKK --- //
+// --- NAVIGASJON OG HANDLING --- //
 
 btnElement.addEventListener('click', async () => {
     btnElement.classList.add('loading');
@@ -116,10 +148,30 @@ backBtn.addEventListener('click', () => {
     }
 });
 
+forwardBtn.addEventListener('click', () => {
+    if (historyIndex < imageHistory.length - 1) {
+        historyIndex++;
+        updateDisplay(imageHistory[historyIndex]);
+    }
+});
+
+function toggleScale() {
+    isScaled = !isScaled;
+    if (isScaled) {
+        imgElement.classList.add('framed-mode');
+        document.getElementById('scale-expand').style.display = 'none';
+        document.getElementById('scale-contract').style.display = 'block';
+    } else {
+        imgElement.classList.remove('framed-mode');
+        document.getElementById('scale-expand').style.display = 'block';
+        document.getElementById('scale-contract').style.display = 'none';
+    }
+}
+scaleBtn.addEventListener('click', toggleScale);
+
 copyBtn.addEventListener('click', async () => {
     try {
         await navigator.clipboard.writeText(imgElement.src);
-        
         document.getElementById('copy-default').style.display = 'none';
         const successIcon = document.getElementById('copy-success');
         successIcon.style.display = 'block';
@@ -130,18 +182,25 @@ copyBtn.addEventListener('click', async () => {
             successIcon.style.display = 'none';
         }, 1500);
     } catch (err) {
-        console.error('Kunne ikke kopiere lenken: ', err);
+        console.error('Kunne ikke kopiere: ', err);
     }
 });
 
+// TASTATURSNARVEIER
 document.addEventListener('keydown', (event) => {
     if (event.code === 'ArrowLeft') {
         backBtn.click();
-    } else if (event.code === 'ArrowRight' || event.code === 'Space') {
-        event.preventDefault(); 
-        if (!btnElement.classList.contains('loading')) {
-            btnElement.click();
+    } else if (event.code === 'ArrowRight') {
+        if (historyIndex < imageHistory.length - 1) {
+            forwardBtn.click();
+        } else {
+            if (!btnElement.classList.contains('loading')) btnElement.click();
         }
+    } else if (event.code === 'Space') {
+        event.preventDefault(); 
+        if (!btnElement.classList.contains('loading')) btnElement.click();
+    } else if (event.code === 'KeyF') {
+        toggleScale();
     }
 });
 
