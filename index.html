@@ -92,85 +92,98 @@
         const imgElement = document.getElementById('display-image');
         const btnElement = document.getElementById('refresh-btn');
 
-        // Oppdatert ID-generator: 2 bokstaver + 4 tall gir massivt bedre treffprosent
+        // Oppdatert liste med stabile raw-proxyer
+        const proxies = [
+            (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+            (url) => `https://corsproxy.org/?${encodeURIComponent(url)}`,
+            (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+        ];
+        
+        let currentProxyIndex = 0;
+
         function generateRandomId() {
             const letters = 'abcdefghijklmnopqrstuvwxyz';
             const numbers = '0123456789';
             let result = '';
-            
-            // 2 tilfeldige bokstaver
-            for (let i = 0; i < 2; i++) {
-                result += letters.charAt(Math.floor(Math.random() * letters.length));
-            }
-            // 4 tilfeldige tall
-            for (let i = 0; i < 4; i++) {
-                result += numbers.charAt(Math.floor(Math.random() * numbers.length));
-            }
+            for (let i = 0; i < 2; i++) result += letters.charAt(Math.floor(Math.random() * letters.length));
+            for (let i = 0; i < 4; i++) result += numbers.charAt(Math.floor(Math.random() * numbers.length));
             return result;
         }
 
         const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-        // Proxy-tjenester pakket inn i asynkrone funksjoner
-        const fetchHtmlViaProxy = async (targetUrl) => {
-            // Proxy 1: AllOrigins JSON (omgår local file:// CORS-problemet)
-            try {
-                const url = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-                const res = await fetch(url, { cache: "no-store" });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.contents) return data.contents;
-                }
-            } catch (e) { /* Ignorerer og går til fallback */ }
-
-            // Proxy 2: Corsproxy.io
-            try {
-                const url = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-                const res = await fetch(url, { cache: "no-store" });
-                if (res.ok) return await res.text();
-            } catch (e) { /* Faller gjennom til feilhåndtering */ }
-
-            throw new Error("Begge proxyer feilet");
-        };
 
         async function fetchRandomImage() {
             let validImageFound = false;
 
             while (!validImageFound) {
                 const id = generateRandomId();
-                const targetUrl = `https://prnt.sc/${id}?cb=${Date.now()}`; 
+                // Har fjernet ?cb for å ikke trigge Cloudflare's spamfilter, og for å la proxyene cache døde lenker
+                const targetUrl = `https://prnt.sc/${id}`; 
+                
+                let htmlText = null;
+                let proxyWorkedNormally = false;
 
                 try {
-                    // Henter HTML via vår smarte proxy-funksjon
-                    const htmlText = await fetchHtmlViaProxy(targetUrl);
-                    
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(htmlText, 'text/html');
+                    const proxyUrl = proxies[currentProxyIndex](targetUrl);
+                    const res = await fetch(proxyUrl);
 
-                    let imgUrl = null;
-                    const metaImage = doc.querySelector('meta[property="og:image"]');
-                    const imgTag = doc.getElementById('screenshot-image');
-
-                    if (metaImage && metaImage.content) {
-                        imgUrl = metaImage.content;
-                    } else if (imgTag && imgTag.src) {
-                        imgUrl = imgTag.src;
+                    // Hvis proxyen blokkerer oss eller er nede, bytter vi proxy
+                    if (res.status === 429 || res.status === 403 || res.status >= 500) {
+                        currentProxyIndex = (currentProxyIndex + 1) % proxies.length;
+                        throw new Error(`Proxy avvist med status ${res.status}`);
                     }
 
-                    if (!imgUrl || imgUrl.includes('st.prntscr.com') || imgUrl.startsWith('//st.prntscr.com')) {
-                        throw new Error('Bilde er slettet eller mangler.');
+                    // Hvis alt gikk bra (200 OK)
+                    if (res.ok) {
+                        htmlText = await res.text();
+                        proxyWorkedNormally = true;
+                    } 
+                    // Hvis Lightshot sier bildet er borte (404), vitner det om at proxyen fungerer, 
+                    // men at ID-en er feil. Da trenger vi ikke bytte proxy.
+                    else if (res.status === 404) {
+                        proxyWorkedNormally = true;
                     }
 
+                } catch (error) {
+                    // Fanger opp CORS-brudd eller nettverksfeil og bytter proxy
+                    currentProxyIndex = (currentProxyIndex + 1) % proxies.length;
+                }
+
+                // Hvis vi ikke fikk HTML (fordi ID var 404 eller proxy feilet), start loopen på nytt med ny ID
+                if (!proxyWorkedNormally || !htmlText) {
+                    await sleep(300); // Kort pause for å unngå å bli flagget som bot
+                    continue;
+                }
+
+                // Parse HTML
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlText, 'text/html');
+
+                let imgUrl = null;
+                const metaImage = doc.querySelector('meta[property="og:image"]');
+                const imgTag = doc.getElementById('screenshot-image');
+
+                if (metaImage && metaImage.content) {
+                    imgUrl = metaImage.content;
+                } else if (imgTag && imgTag.src) {
+                    imgUrl = imgTag.src;
+                }
+
+                // Filtrer ut Lightshots placeholders for slettede bilder
+                if (!imgUrl || imgUrl.includes('st.prntscr.com') || imgUrl.startsWith('//st.prntscr.com')) {
+                    await sleep(300);
+                    continue;
+                }
+
+                try {
                     await preloadImage(imgUrl);
-
                     imgElement.src = imgUrl;
                     imgElement.style.display = 'block';
                     imgElement.style.opacity = '1';
-                    validImageFound = true; 
-
-                } catch (error) {
-                    // Ved feil, vent 1 sekund for å ikke overbelaste proxyene
-                    await sleep(1000);
+                    validImageFound = true;
+                } catch (e) {
+                    // Hvis selve Imgur-lenken er død (selv om Lightshot tror den eksisterer)
+                    await sleep(300);
                 }
             }
         }
