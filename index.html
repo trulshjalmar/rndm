@@ -2,72 +2,92 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lightshot Roulette</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lightshot/Imgur Roulette</title>
     <style>
         body {
-            background-color: #121212;
+            /* Endret til en litt lysere, dyp mørkegrå nyanse */
+            background-color: #161616; 
             margin: 0;
             padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            min-height: 100dvh; 
             overflow: hidden;
             font-family: sans-serif;
-        }
-
-        .container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 30px;
+            overscroll-behavior: none; 
         }
 
         #display-image {
             max-width: 90vw;
-            max-height: 75vh;
+            max-height: calc(100dvh - 140px); 
+            margin-bottom: 60px; 
             border: 2px solid rgba(255, 255, 255, 0.1);
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
             border-radius: 6px;
             display: none;
             object-fit: contain;
             transition: opacity 0.3s ease;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
-        #refresh-btn {
+        .button-group {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            z-index: 10;
+        }
+
+        .icon-btn {
             background: transparent;
             border: none;
             cursor: pointer;
-            padding: 15px;
             border-radius: 50%;
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: background-color 0.3s ease, transform 0.2s ease;
+            transition: background-color 0.3s ease, transform 0.2s ease, opacity 0.3s ease;
+            touch-action: manipulation; 
+            -webkit-tap-highlight-color: transparent; 
+            outline: none;
         }
 
-        #refresh-btn:hover {
-            background-color: rgba(255, 255, 255, 0.05);
+        @media (hover: hover) {
+            .icon-btn:hover { background-color: rgba(255, 255, 255, 0.05); }
+            .icon-btn:hover svg { fill: #ffffff; }
         }
 
-        #refresh-btn:active {
-            transform: scale(0.95);
-        }
+        .icon-btn:active { transform: scale(0.90); }
 
-        #refresh-btn svg {
-            width: 32px;
-            height: 32px;
+        .icon-btn svg {
             fill: #777777;
             transition: fill 0.3s ease;
         }
 
-        #refresh-btn:hover svg {
-            fill: #ffffff;
+        #refresh-btn { padding: 15px; }
+        #refresh-btn svg { width: 34px; height: 34px; }
+
+        .side-btn { padding: 12px; }
+        .side-btn svg { width: 24px; height: 24px; }
+
+        .disabled {
+            opacity: 0.2;
+            pointer-events: none;
         }
 
-        .loading svg {
-            animation: spin 1s linear infinite;
+        #dice-icon { display: block; }
+        #bubbles-icon { display: none; }
+
+        .loading #dice-icon { display: none; }
+        .loading #bubbles-icon { 
+            display: block; 
+            animation: spin 1s cubic-bezier(0.4, 0.1, 0.6, 0.9) infinite;
             fill: #ffffff !important;
         }
 
@@ -79,11 +99,35 @@
 </head>
 <body>
 
-    <div class="container">
-        <img id="display-image" src="" alt="">
-        <button id="refresh-btn" aria-label="Neste bilde">
+    <img id="display-image" src="" alt="Tilfeldig skjermbilde">
+    
+    <div class="button-group">
+        <button id="back-btn" class="icon-btn side-btn disabled" aria-label="Forrige bilde">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M12 2.75a9.25 9.25 0 1 0 4.737 17.197l-1.393-2.393A6.75 6.75 0 1 1 18.75 12h-2.5l3.875-4.625L24 12h-2.75a9.25 9.25 0 0 0-9.25-9.25z"/>
+                <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z"/>
+            </svg>
+        </button>
+
+        <button id="refresh-btn" class="icon-btn" aria-label="Neste bilde">
+            <svg id="dice-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M19,3H5C3.9,3 3,3.9 3,5V19C3,20.1 3.9,21 5,21H19C20.1,21 21,20.1 21,19V5C21,3.9 20.1,3 19,3ZM7.5,18C6.67,18 6,17.33 6,16.5C6,15.67 6.67,15 7.5,15C8.33,15 9,15.67 9,16.5C9,17.33 8.33,18 7.5,18ZM7.5,9C6.67,9 6,8.33 6,7.5C6,6.67 6.67,6 7.5,6C8.33,6 9,6.67 9,7.5C9,8.33 8.33,9 7.5,9ZM12,13.5C11.17,13.5 10.5,12.83 10.5,12C10.5,11.17 11.17,10.5 12,10.5C12.83,10.5 13.5,11.17 13.5,12C13.5,12.83 12.83,13.5 12,13.5ZM16.5,18C15.67,18 15,17.33 15,16.5C15,15.67 15.67,15 16.5,15C17.33,15 18,15.67 18,16.5C18,17.33 17.33,18 16.5,18ZM16.5,9C15.67,9 15,8.33 15,7.5C15,6.67 15.67,6 16.5,6C17.33,6 18,6.67 18,7.5C18,8.33 17.33,9 16.5,9Z"/>
+            </svg>
+            <svg id="bubbles-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <circle cx="12" cy="3" r="3" />
+                <circle cx="19.5" cy="7.5" r="2.5" />
+                <circle cx="19.5" cy="16.5" r="2" />
+                <circle cx="12" cy="21" r="1.5" />
+                <circle cx="4.5" cy="16.5" r="1" />
+                <circle cx="4.5" cy="7.5" r="0.5" />
+            </svg>
+        </button>
+
+        <button id="copy-btn" class="icon-btn side-btn" aria-label="Kopier lenke">
+            <svg id="copy-default" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+            <svg id="copy-success" style="display:none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
             </svg>
         </button>
     </div>
@@ -91,117 +135,119 @@
     <script>
         const imgElement = document.getElementById('display-image');
         const btnElement = document.getElementById('refresh-btn');
+        const backBtn = document.getElementById('back-btn');
+        const copyBtn = document.getElementById('copy-btn');
 
-        // Oppdatert liste med stabile raw-proxyer
-        const proxies = [
-            (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-            (url) => `https://corsproxy.org/?${encodeURIComponent(url)}`,
-            (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-        ];
-        
-        let currentProxyIndex = 0;
+        let imageHistory = [];
+        let historyIndex = -1;
+        const MAX_HISTORY = 4; 
 
-        function generateRandomId() {
-            const letters = 'abcdefghijklmnopqrstuvwxyz';
-            const numbers = '0123456789';
+        function generateImgurId() {
+            const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
             let result = '';
-            for (let i = 0; i < 2; i++) result += letters.charAt(Math.floor(Math.random() * letters.length));
-            for (let i = 0; i < 4; i++) result += numbers.charAt(Math.floor(Math.random() * numbers.length));
+            for (let i = 0; i < 5; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
             return result;
         }
 
-        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        function checkImage(url) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    if (img.width === 161 && img.height === 81) {
+                        resolve(false);
+                    } else if (img.width === 0 || img.height === 0) {
+                        resolve(false);
+                    } else {
+                        resolve(true); 
+                    }
+                };
+                img.onerror = () => resolve(false); 
+                img.src = url;
+            });
+        }
+
+        function updateDisplay(url) {
+            imgElement.src = url;
+            imgElement.style.display = 'block';
+            imgElement.style.opacity = '1';
+
+            if (historyIndex <= 0) {
+                backBtn.classList.add('disabled');
+            } else {
+                backBtn.classList.remove('disabled');
+            }
+        }
 
         async function fetchRandomImage() {
             let validImageFound = false;
 
             while (!validImageFound) {
-                const id = generateRandomId();
-                // Har fjernet ?cb for å ikke trigge Cloudflare's spamfilter, og for å la proxyene cache døde lenker
-                const targetUrl = `https://prnt.sc/${id}`; 
-                
-                let htmlText = null;
-                let proxyWorkedNormally = false;
+                const id = generateImgurId();
+                const targetUrl = `https://i.imgur.com/${id}.jpg`;
 
-                try {
-                    const proxyUrl = proxies[currentProxyIndex](targetUrl);
-                    const res = await fetch(proxyUrl);
+                const isValid = await checkImage(targetUrl);
 
-                    // Hvis proxyen blokkerer oss eller er nede, bytter vi proxy
-                    if (res.status === 429 || res.status === 403 || res.status >= 500) {
-                        currentProxyIndex = (currentProxyIndex + 1) % proxies.length;
-                        throw new Error(`Proxy avvist med status ${res.status}`);
+                if (isValid) {
+                    imageHistory = imageHistory.slice(0, historyIndex + 1);
+                    imageHistory.push(targetUrl);
+                    
+                    if (imageHistory.length > MAX_HISTORY) {
+                        imageHistory.shift(); 
                     }
+                    historyIndex = imageHistory.length - 1;
 
-                    // Hvis alt gikk bra (200 OK)
-                    if (res.ok) {
-                        htmlText = await res.text();
-                        proxyWorkedNormally = true;
-                    } 
-                    // Hvis Lightshot sier bildet er borte (404), vitner det om at proxyen fungerer, 
-                    // men at ID-en er feil. Da trenger vi ikke bytte proxy.
-                    else if (res.status === 404) {
-                        proxyWorkedNormally = true;
-                    }
-
-                } catch (error) {
-                    // Fanger opp CORS-brudd eller nettverksfeil og bytter proxy
-                    currentProxyIndex = (currentProxyIndex + 1) % proxies.length;
-                }
-
-                // Hvis vi ikke fikk HTML (fordi ID var 404 eller proxy feilet), start loopen på nytt med ny ID
-                if (!proxyWorkedNormally || !htmlText) {
-                    await sleep(300); // Kort pause for å unngå å bli flagget som bot
-                    continue;
-                }
-
-                // Parse HTML
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(htmlText, 'text/html');
-
-                let imgUrl = null;
-                const metaImage = doc.querySelector('meta[property="og:image"]');
-                const imgTag = doc.getElementById('screenshot-image');
-
-                if (metaImage && metaImage.content) {
-                    imgUrl = metaImage.content;
-                } else if (imgTag && imgTag.src) {
-                    imgUrl = imgTag.src;
-                }
-
-                // Filtrer ut Lightshots placeholders for slettede bilder
-                if (!imgUrl || imgUrl.includes('st.prntscr.com') || imgUrl.startsWith('//st.prntscr.com')) {
-                    await sleep(300);
-                    continue;
-                }
-
-                try {
-                    await preloadImage(imgUrl);
-                    imgElement.src = imgUrl;
-                    imgElement.style.display = 'block';
-                    imgElement.style.opacity = '1';
+                    updateDisplay(targetUrl);
                     validImageFound = true;
-                } catch (e) {
-                    // Hvis selve Imgur-lenken er død (selv om Lightshot tror den eksisterer)
-                    await sleep(300);
                 }
             }
-        }
-
-        function preloadImage(url) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = resolve;
-                img.onerror = reject;
-                img.src = url;
-            });
         }
 
         btnElement.addEventListener('click', async () => {
             btnElement.classList.add('loading');
             imgElement.style.opacity = '0.4';
-            await fetchRandomImage();
-            btnElement.classList.remove('loading');
+            
+            setTimeout(async () => {
+                await fetchRandomImage();
+                btnElement.classList.remove('loading');
+            }, 10);
+        });
+
+        backBtn.addEventListener('click', () => {
+            if (historyIndex > 0) {
+                historyIndex--;
+                updateDisplay(imageHistory[historyIndex]);
+            }
+        });
+
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(imgElement.src);
+                
+                document.getElementById('copy-default').style.display = 'none';
+                const successIcon = document.getElementById('copy-success');
+                successIcon.style.display = 'block';
+                successIcon.style.fill = '#4CAF50'; 
+
+                setTimeout(() => {
+                    document.getElementById('copy-default').style.display = 'block';
+                    successIcon.style.display = 'none';
+                }, 1500);
+            } catch (err) {
+                console.error('Kunne ikke kopiere lenken: ', err);
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'ArrowLeft') {
+                backBtn.click();
+            } else if (event.code === 'ArrowRight' || event.code === 'Space') {
+                event.preventDefault(); 
+                if (!btnElement.classList.contains('loading')) {
+                    btnElement.click();
+                }
+            }
         });
 
         window.onload = async () => {
