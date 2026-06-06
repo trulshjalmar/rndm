@@ -1,5 +1,5 @@
 body {
-    background-color: #161616; 
+    background-color: #131314; 
     margin: 0;
     padding: 0;
     display: flex;
@@ -7,78 +7,150 @@ body {
     align-items: center;
     min-height: 100dvh; 
     overflow: hidden;
-    font-family: sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overscroll-behavior: none; 
 }
 
-/* --- Hjørnepanel med Bold teller og Stats --- */
-#info-container {
+/* --- Top Controls Containers --- */
+#left-controls-container {
     position: fixed;
     top: 20px;
-    right: 25px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    z-index: 5;
-    font-family: 'Courier New', Courier, monospace; 
-    pointer-events: none;
-    user-select: none;
-    -webkit-user-select: none;
-}
-
-.counter-row {
+    left: 20px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    z-index: 100;
 }
 
-#counter {
-    color: rgba(255, 255, 255, 0.4); 
-    font-size: 16px;
-    font-weight: bold;
-    letter-spacing: 1px;
+#right-controls-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    z-index: 100;
 }
 
-#stats-btn {
+/* --- Bubble-less Top Buttons --- */
+#menu-btn, #stats-btn {
     background: transparent;
     border: none;
     cursor: pointer;
-    padding: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: 8px; 
+    display: grid;
+    place-items: center;
     outline: none;
-    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
 }
 
-#stats-btn svg {
-    width: 16px;
-    height: 16px;
-    fill: rgba(255, 255, 255, 0.15);
-    transition: fill 0.2s;
+#menu-btn svg, #stats-btn svg {
+    width: 24px; 
+    height: 24px;
+    fill: #777777; 
+    transition: fill 0.3s ease, transform 0.2s ease;
 }
 
-#stats-btn:hover svg, #stats-btn.active svg {
-    fill: #4CAF50;
+#menu-btn:hover svg, #stats-btn:hover svg {
+    fill: #ffffff;
+}
+
+#menu-btn.active svg, #stats-btn.active svg {
+    fill: #ffffff;
+}
+
+#menu-btn:active svg, #stats-btn:active svg {
+    transform: scale(0.90);
+}
+
+/* --- Ghost Counter --- */
+#counter {
+    color: #ffffff;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    user-select: none;
+    -webkit-user-select: none;
+    opacity: 0.35; 
+    transition: opacity 0.3s ease;
+    cursor: default;
+}
+
+#counter:hover {
+    opacity: 1; 
+}
+
+/* --- Panels (Settings & Stats) --- */
+#settings-panel, #stats-panel {
+    position: fixed;
+    top: 65px;
+    background: #1e1f20;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.08);
+    display: none;
+    z-index: 100;
+    color: #e3e3e3;
+    backdrop-filter: blur(5px);
+}
+
+#settings-panel {
+    left: 20px;
+    width: 210px;
+    flex-direction: column;
+    gap: 12px;
 }
 
 #stats-panel {
-    margin-top: 10px;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.3);
-    text-align: right;
-    display: none;
+    right: 20px;
+    width: 130px;
     flex-direction: column;
-    gap: 4px;
-    background: rgba(0, 0, 0, 0.4);
-    padding: 10px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    gap: 6px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
 }
 
-.highlight { color: rgba(255, 255, 255, 0.7); font-weight: bold; }
+.settings-group {
+    display: flex;
+    flex-direction: column;
+}
 
-/* --- Bilde (Strømlinjeformet Skalering) --- */
+/* --- Panel Pill Buttons --- */
+.button-row {
+    display: flex;
+    gap: 6px;
+}
+
+.pill-btn, .format-btn {
+    flex: 1;
+    background: #131314;
+    color: #777777;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 8px;
+    border-radius: 6px;
+    outline: none;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.pill-btn:hover, .format-btn:hover {
+    background: #1c1c1e;
+    color: #e3e3e3;
+}
+
+.pill-btn.active, .format-btn.active {
+    background: #2d2f31;
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.highlight { color: #ffffff; font-weight: bold; }
+
+/* --- Image --- */
 #display-image {
     max-width: 90vw;
     max-height: calc(100dvh - 140px); 
@@ -86,7 +158,6 @@ body {
     border-radius: 6px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
     display: none;
-    
     object-fit: scale-down; 
     transition: max-width 0.3s ease, max-height 0.3s ease, padding 0.3s ease, background-color 0.3s ease;
     user-select: none;
@@ -102,7 +173,7 @@ body {
     border-radius: 12px;
 }
 
-/* --- Knapperader --- */
+/* --- Controls Row --- */
 .nav-group {
     position: fixed;
     bottom: 30px;
@@ -114,23 +185,10 @@ body {
     z-index: 10;
 }
 
-.action-group-right {
-    position: absolute;
-    left: 100%;
-    margin-left: 40px; 
-    display: flex;
-    align-items: center;
-}
+.action-group-right { position: absolute; left: 100%; margin-left: 40px; display: flex; align-items: center; }
+.action-group-left { position: absolute; right: 100%; margin-right: 40px; display: flex; align-items: center; }
 
-.action-group-left {
-    position: absolute;
-    right: 100%;
-    margin-right: 40px; 
-    display: flex;
-    align-items: center;
-}
-
-/* --- Knappe-design --- */
+/* --- Icons --- */
 .icon-btn {
     background: transparent;
     border: none;
@@ -153,70 +211,37 @@ body {
 
 @media (hover: hover) {
     .icon-btn:hover { background-color: rgba(255, 255, 255, 0.05); }
-    .icon-btn:hover > svg { fill: #ffffff; }
+    .icon-btn:hover > svg { fill: #e3e3e3; }
 }
 
 .icon-btn:active { transform: scale(0.90); }
 
-/* --- Størrelser --- */
-#refresh-btn { 
-    width: 68px !important; 
-    height: 68px !important; 
-    padding: 0; 
-}
-#refresh-btn > svg { 
-    width: 36px !important; 
-    height: 36px !important; 
-}
-
-/* Låser de 4 sideknappene til å være helt identiske i ytre boks-størrelse */
-.side-btn { 
-    width: 50px !important; 
-    height: 50px !important; 
-    padding: 0; 
-}
-
-/* Standardstørrelse på pilene i navigasjonen */
-#back-btn > svg, 
-#forward-btn > svg { 
-    width: 26px !important; 
-    height: 26px !important; 
-}
-
-/* Skaler-ikonet har masse usynlig padding ("luft") i bildefilen sin */
-#scale-btn > svg { 
-    width: 28px !important; 
-    height: 28px !important; 
-}
-
-/* Kopier-ikonet er tegnet helt ut i kantene, så det må krympes for å matche visuelt */
-#copy-btn > svg { 
-    width: 20px !important; 
-    height: 20px !important; 
-}
-
+#refresh-btn { width: 68px !important; height: 68px !important; padding: 0; }
+#refresh-btn > svg { width: 36px !important; height: 36px !important; }
+.side-btn { width: 50px !important; height: 50px !important; padding: 0; }
+#back-btn > svg, #forward-btn > svg { width: 26px !important; height: 26px !important; }
+#scale-btn > svg { width: 28px !important; height: 28px !important; }
+#copy-btn > svg { width: 20px !important; height: 20px !important; }
 .disabled { opacity: 0.2; pointer-events: none; }
 
-/* --- Ikon-Animasjoner --- */
+/* --- Animations --- */
 #reload-icon { 
     opacity: 1; 
     transform-origin: center center;
     transform: rotate(0deg) scale(1);
     transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
 }
-
 #bubbles-icon { 
     opacity: 0;
     transform: scale(0.5);
     transition: opacity 0.2s ease, transform 0.3s ease;
 }
-
 .loading #reload-icon { opacity: 0; transform: rotate(180deg) scale(0.5); }
 .loading #bubbles-icon { 
     opacity: 1; 
     transform: scale(1); 
     animation: spin 1s cubic-bezier(0.4, 0.1, 0.6, 0.9) infinite;
-    fill: #ffffff !important;
+    fill: #ffffff !important; 
 }
 
 @keyframes spin {
