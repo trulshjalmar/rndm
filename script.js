@@ -36,10 +36,11 @@ let isScaled = false;
 let currentService = 'imgur';
 let useImgur7Char = false;
 
-// --- FRONTEND MAGIC: BACKGROUND BUFFER ---
-const BUFFER_SIZE = 3; 
+// --- FRONTEND MAGIC: THE GATLING GUN (WORKER POOL) ---
+const CONCURRENCY = 25; // Antall uavhengige søk som kjører konstant
+const BUFFER_SIZE = 15; // Antall bilder å ha i bakhånd
 let imageBuffer = [];
-let isFetchingBuffer = false;
+let activeWorkers = 0;
 let currentSessionId = 0; 
 
 // --- PANEL TOGGLES ---
@@ -47,7 +48,7 @@ statsBtn.addEventListener('click', () => {
     if (statsPanel.style.display === 'none' || statsPanel.style.display === '') {
         statsPanel.style.display = 'flex';
         statsBtn.classList.add('active');
-        settingsPanel.style.display = 'none'; // Lukk menyen hvis den er åpen
+        settingsPanel.style.display = 'none'; 
         menuBtn.classList.remove('active');
     } else {
         statsPanel.style.display = 'none';
@@ -59,7 +60,7 @@ menuBtn.addEventListener('click', () => {
     if (settingsPanel.style.display === 'none' || settingsPanel.style.display === '') {
         settingsPanel.style.display = 'flex';
         menuBtn.classList.add('active');
-        statsPanel.style.display = 'none'; // Lukk stats hvis åpen
+        statsPanel.style.display = 'none'; 
         statsBtn.classList.remove('active');
     } else {
         settingsPanel.style.display = 'none';
@@ -71,7 +72,6 @@ menuBtn.addEventListener('click', () => {
 function triggerModeChange() {
     currentSessionId++; 
     imageBuffer = []; 
-    isFetchingBuffer = false; 
     
     if (!btnElement.classList.contains('loading')) {
         btnElement.click();
@@ -85,12 +85,9 @@ serviceBtns.forEach(btn => {
         if (currentService === selectedService) return;
 
         currentService = selectedService;
-
-        // Visual feedback
         serviceBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
 
-        // Dynamically toggle the Imgur format options
         if (currentService === 'imgur') {
             imgurOptionsGroup.style.display = 'flex';
         } else {
@@ -109,8 +106,6 @@ formatBtns.forEach(btn => {
         if (useImgur7Char === is7Char) return;
 
         useImgur7Char = is7Char;
-
-        // Visual feedback
         formatBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
 
@@ -143,8 +138,10 @@ function getTargetInfo() {
         const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         id = '';
         if (useImgur7Char) {
-            const lettersOnly = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-            id += lettersOnly.charAt(Math.floor(Math.random() * lettersOnly.length));
+            // HACK: Nye 7-tegns Imgur bilder starter historisk sett alltid med små bokstaver. 
+            // Vi snevrer inn det første tegnet drastisk for å mangedoble hit-raten.
+            const firstChars = 'abcdefghijklmnopqrstuvwxyz';
+            id += firstChars.charAt(Math.floor(Math.random() * firstChars.length));
             for (let i = 0; i < 6; i++) {
                 id += chars.charAt(Math.floor(Math.random() * chars.length));
             }
@@ -158,52 +155,74 @@ function getTargetInfo() {
     return { id, targetUrl };
 }
 
-function checkImage(url) {
+// Aggressiv Timeout sjekk: Drep lenken hvis den tar mer enn 1.5s
+function checkImage(url, timeoutMs = 1500) {
     return new Promise((resolve) => {
+        let isResolved = false;
         const img = new Image();
-        img.onload = () => {
-            if (img.width === 161 && img.height === 81) {
+
+        const timer = setTimeout(() => {
+            if (!isResolved) {
+                isResolved = true;
+                img.src = ''; // Avbryt nedlastingen
                 resolve(false);
-            } else if (img.width === 0 || img.height === 0) {
-                resolve(false);
-            } else {
-                resolve(true); 
             }
+        }, timeoutMs);
+
+        img.onload = () => {
+            if (isResolved) return;
+            clearTimeout(timer);
+            isResolved = true;
+            if (img.width === 161 && img.height === 81) resolve(false);
+            else if (img.width === 0 || img.height === 0) resolve(false);
+            else resolve(true);
         };
-        img.onerror = () => resolve(false); 
+        
+        img.onerror = () => {
+            if (isResolved) return;
+            clearTimeout(timer);
+            isResolved = true;
+            resolve(false);
+        };
+        
         img.src = url;
     });
 }
 
-// THE BACKGROUND WORKER
-async function fillBuffer() {
-    if (isFetchingBuffer) return;
-    isFetchingBuffer = true;
-    
-    let localSessionId = currentSessionId;
-
-    while (imageBuffer.length < BUFFER_SIZE && localSessionId === currentSessionId) {
+// Uavhengig arbeider som går i loop til bufferen er full
+async function backgroundWorker(localSessionId) {
+    while (localSessionId === currentSessionId && imageBuffer.length < BUFFER_SIZE) {
         const { id, targetUrl } = getTargetInfo();
-        
         if (seenIds.has(id)) continue;
 
         const isValid = await checkImage(targetUrl);
+        
+        if (localSessionId !== currentSessionId) break; // Stopp hvis bruker har byttet modus
+        
         updateStats(isValid);
 
-        if (isValid && localSessionId === currentSessionId) {
+        if (isValid) {
             seenIds.add(id);
             if (seenIds.size > 5000) {
                 seenIds = new Set(Array.from(seenIds).slice(-2500));
             }
             localStorage.setItem('imgurRouletteSeen', JSON.stringify([...seenIds]));
             
-            imageBuffer.push(targetUrl);
+            // Sjekk bufferen en gang til i tilfelle andre arbeidere har fylt den i mellomtiden
+            if (imageBuffer.length < BUFFER_SIZE) {
+                imageBuffer.push(targetUrl);
+            }
         }
-        
-        await new Promise(r => setTimeout(r, 5));
     }
-    
-    isFetchingBuffer = false;
+    activeWorkers--;
+}
+
+// Kickstart workers til vi når max concurrency
+function fillBuffer() {
+    while (activeWorkers < CONCURRENCY && imageBuffer.length < BUFFER_SIZE) {
+        activeWorkers++;
+        backgroundWorker(currentSessionId);
+    }
 }
 
 function updateDisplay(url) {
@@ -225,36 +244,21 @@ function updateDisplay(url) {
 }
 
 async function fetchRandomImage() {
-    let targetUrl;
+    let localSessionId = currentSessionId;
 
-    if (imageBuffer.length > 0) {
-        // Instant load from buffer
-        targetUrl = imageBuffer.shift();
+    // Hvis bufferen er tom (starten), fyr i gang maskineriet og vent
+    if (imageBuffer.length === 0) {
         fillBuffer(); 
-    } else {
-        let validImageFound = false;
-        let localSessionId = currentSessionId;
-
-        while (!validImageFound && localSessionId === currentSessionId) {
-            const { id, targetUrl: url } = getTargetInfo();
-            if (seenIds.has(id)) continue;
-
-            const isValid = await checkImage(url);
-            updateStats(isValid);
-
-            if (isValid && localSessionId === currentSessionId) {
-                seenIds.add(id);
-                if (seenIds.size > 5000) {
-                    seenIds = new Set(Array.from(seenIds).slice(-2500));
-                }
-                localStorage.setItem('imgurRouletteSeen', JSON.stringify([...seenIds]));
-                targetUrl = url;
-                validImageFound = true;
-            }
-            await new Promise(r => setTimeout(r, 5));
+        while (imageBuffer.length === 0 && localSessionId === currentSessionId) {
+            await new Promise(r => setTimeout(r, 50));
         }
-        fillBuffer(); 
     }
+
+    if (localSessionId !== currentSessionId) return; // Modus byttet
+
+    // Ta det første ferdige bildet
+    const targetUrl = imageBuffer.shift();
+    fillBuffer(); // Vekk arbeiderne for å erstatte bildet vi akkurat tok
 
     if (targetUrl) {
         totalImagesFound++;
