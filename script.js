@@ -36,9 +36,9 @@ let isScaled = false;
 let currentService = 'imgur';
 let useImgur7Char = false;
 
-// --- FRONTEND MAGIC: THE GATLING GUN (WORKER POOL) ---
-const CONCURRENCY = 25; // Antall uavhengige søk som kjører konstant
-const BUFFER_SIZE = 15; // Antall bilder å ha i bakhånd
+// --- FRONTEND MAGIC: THE POLITE WORKER POOL ---
+const CONCURRENCY = 4; // Skrudd kraftig ned for å unngå rate limiting
+const BUFFER_SIZE = 5; // Mindre buffer for å unngå unødvendig spamming av Imgur
 let imageBuffer = [];
 let activeWorkers = 0;
 let currentSessionId = 0; 
@@ -138,8 +138,6 @@ function getTargetInfo() {
         const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         id = '';
         if (useImgur7Char) {
-            // HACK: Nye 7-tegns Imgur bilder starter historisk sett alltid med små bokstaver. 
-            // Vi snevrer inn det første tegnet drastisk for å mangedoble hit-raten.
             const firstChars = 'abcdefghijklmnopqrstuvwxyz';
             id += firstChars.charAt(Math.floor(Math.random() * firstChars.length));
             for (let i = 0; i < 6; i++) {
@@ -155,8 +153,7 @@ function getTargetInfo() {
     return { id, targetUrl };
 }
 
-// Aggressiv Timeout sjekk: Drep lenken hvis den tar mer enn 1.5s
-function checkImage(url, timeoutMs = 1500) {
+function checkImage(url, timeoutMs = 2000) {
     return new Promise((resolve) => {
         let isResolved = false;
         const img = new Image();
@@ -164,7 +161,7 @@ function checkImage(url, timeoutMs = 1500) {
         const timer = setTimeout(() => {
             if (!isResolved) {
                 isResolved = true;
-                img.src = ''; // Avbryt nedlastingen
+                img.src = ''; 
                 resolve(false);
             }
         }, timeoutMs);
@@ -189,39 +186,43 @@ function checkImage(url, timeoutMs = 1500) {
     });
 }
 
-// Uavhengig arbeider som går i loop til bufferen er full
-async function backgroundWorker(localSessionId) {
+// Høflig arbeider som tar pauser for å unngå rate limiting (HTTP 429)
+async function politeBackgroundWorker(localSessionId) {
     while (localSessionId === currentSessionId && imageBuffer.length < BUFFER_SIZE) {
         const { id, targetUrl } = getTargetInfo();
-        if (seenIds.has(id)) continue;
-
-        const isValid = await checkImage(targetUrl);
         
-        if (localSessionId !== currentSessionId) break; // Stopp hvis bruker har byttet modus
-        
-        updateStats(isValid);
-
-        if (isValid) {
-            seenIds.add(id);
-            if (seenIds.size > 5000) {
-                seenIds = new Set(Array.from(seenIds).slice(-2500));
-            }
-            localStorage.setItem('imgurRouletteSeen', JSON.stringify([...seenIds]));
+        if (!seenIds.has(id)) {
+            const isValid = await checkImage(targetUrl);
             
-            // Sjekk bufferen en gang til i tilfelle andre arbeidere har fylt den i mellomtiden
-            if (imageBuffer.length < BUFFER_SIZE) {
-                imageBuffer.push(targetUrl);
+            if (localSessionId !== currentSessionId) break; 
+            
+            updateStats(isValid);
+
+            if (isValid) {
+                seenIds.add(id);
+                if (seenIds.size > 5000) {
+                    seenIds = new Set(Array.from(seenIds).slice(-2500));
+                }
+                localStorage.setItem('imgurRouletteSeen', JSON.stringify([...seenIds]));
+                
+                if (imageBuffer.length < BUFFER_SIZE) {
+                    imageBuffer.push(targetUrl);
+                }
             }
         }
+        
+        // PUSTEPAUSE: Venter 150-250ms mellom HVERT søk. 
+        // Dette gjør at vi ser ut som en vanlig bruker som surfer, ikke et DDoS-angrep.
+        const throttleDelay = Math.floor(Math.random() * 100) + 150; 
+        await new Promise(r => setTimeout(r, throttleDelay));
     }
     activeWorkers--;
 }
 
-// Kickstart workers til vi når max concurrency
 function fillBuffer() {
     while (activeWorkers < CONCURRENCY && imageBuffer.length < BUFFER_SIZE) {
         activeWorkers++;
-        backgroundWorker(currentSessionId);
+        politeBackgroundWorker(currentSessionId);
     }
 }
 
@@ -246,19 +247,17 @@ function updateDisplay(url) {
 async function fetchRandomImage() {
     let localSessionId = currentSessionId;
 
-    // Hvis bufferen er tom (starten), fyr i gang maskineriet og vent
     if (imageBuffer.length === 0) {
         fillBuffer(); 
         while (imageBuffer.length === 0 && localSessionId === currentSessionId) {
-            await new Promise(r => setTimeout(r, 50));
+            await new Promise(r => setTimeout(r, 100)); // Sjekker litt sjeldnere
         }
     }
 
-    if (localSessionId !== currentSessionId) return; // Modus byttet
+    if (localSessionId !== currentSessionId) return; 
 
-    // Ta det første ferdige bildet
     const targetUrl = imageBuffer.shift();
-    fillBuffer(); // Vekk arbeiderne for å erstatte bildet vi akkurat tok
+    fillBuffer(); 
 
     if (targetUrl) {
         totalImagesFound++;
