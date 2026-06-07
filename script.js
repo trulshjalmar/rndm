@@ -37,8 +37,8 @@ let currentService = 'imgur';
 let useImgur7Char = false;
 
 // --- FRONTEND MAGIC: THE POLITE WORKER POOL ---
-const CONCURRENCY = 4; // Skrudd kraftig ned for å unngå rate limiting
-const BUFFER_SIZE = 5; // Mindre buffer for å unngå unødvendig spamming av Imgur
+const CONCURRENCY = 4; 
+const BUFFER_SIZE = 5; 
 let imageBuffer = [];
 let activeWorkers = 0;
 let currentSessionId = 0; 
@@ -124,8 +124,12 @@ function updateStats(isSuccess) {
     statRate.textContent = rate.toFixed(2);
 }
 
+// HENTER MÅL OG FILENDELSE
 function getTargetInfo() {
     let id, targetUrl;
+    
+    const extensions = ['.jpg', '.jpg', '.png', '.png', '.webp', '.gif'];
+    const randomExt = extensions[Math.floor(Math.random() * extensions.length)];
     
     if (currentService === 'catbox') {
         const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -133,7 +137,7 @@ function getTargetInfo() {
         for (let i = 0; i < 6; i++) {
             id += chars.charAt(Math.floor(Math.random() * chars.length));
         }
-        targetUrl = `https://files.catbox.moe/${id}.jpg`;
+        targetUrl = `https://files.catbox.moe/${id}${randomExt}`;
     } else {
         const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         id = '';
@@ -148,7 +152,7 @@ function getTargetInfo() {
                 id += chars.charAt(Math.floor(Math.random() * chars.length));
             }
         }
-        targetUrl = `https://i.imgur.com/${id}.jpg`;
+        targetUrl = `https://i.imgur.com/${id}${randomExt}`;
     }
     return { id, targetUrl };
 }
@@ -170,6 +174,7 @@ function checkImage(url, timeoutMs = 2000) {
             if (isResolved) return;
             clearTimeout(timer);
             isResolved = true;
+            // Bilde som betyr "fjernt/slettet" på Imgur
             if (img.width === 161 && img.height === 81) resolve(false);
             else if (img.width === 0 || img.height === 0) resolve(false);
             else resolve(true);
@@ -186,11 +191,12 @@ function checkImage(url, timeoutMs = 2000) {
     });
 }
 
-// Høflig arbeider som tar pauser for å unngå rate limiting (HTTP 429)
+// unngå rate limiting (HTTP 429)
 async function politeBackgroundWorker(localSessionId) {
     while (localSessionId === currentSessionId && imageBuffer.length < BUFFER_SIZE) {
         const { id, targetUrl } = getTargetInfo();
         
+        // Unngå å sjekke samme ID flere ganger
         if (!seenIds.has(id)) {
             const isValid = await checkImage(targetUrl);
             
@@ -200,6 +206,7 @@ async function politeBackgroundWorker(localSessionId) {
 
             if (isValid) {
                 seenIds.add(id);
+                // Holder minnet rent
                 if (seenIds.size > 5000) {
                     seenIds = new Set(Array.from(seenIds).slice(-2500));
                 }
@@ -211,8 +218,7 @@ async function politeBackgroundWorker(localSessionId) {
             }
         }
         
-        // PUSTEPAUSE: Venter 150-250ms mellom HVERT søk. 
-        // Dette gjør at vi ser ut som en vanlig bruker som surfer, ikke et DDoS-angrep.
+        // PUSTEPAUSE: 150-250ms
         const throttleDelay = Math.floor(Math.random() * 100) + 150; 
         await new Promise(r => setTimeout(r, throttleDelay));
     }
